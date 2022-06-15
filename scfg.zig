@@ -2,14 +2,20 @@ const std = @import("std");
 const testing = std.testing;
 const Allocator = std.mem.Allocator;
 
-const Ast = @import("ast.zig").Ast;
-const Parser = @import("parser.zig").Parser;
-const Tokenizer = @import("tokenizer.zig").Tokenizer;
+const Parser = @import("src/Parser.zig");
+const Tokenizer = @import("src/Tokenizer.zig");
 
-pub fn parse(allocator: Allocator, source: [:0]const u8) !Ast {
+const Block = []*Directive;
+
+const Directive = struct {
+    name: []const u8,
+    params: [][]const u8,
+    blocks: []Block,
+};
+
+pub fn parse(allocator: Allocator, source: [:0]const u8) !Block {
     var tokenizer = Tokenizer.init(source);
-    var parser = Parser.init(allocator, source);
-    defer parser.deinit();
+    var parser: Parser = .{ .allocator = allocator, .source = source };
 
     while (true) {
         const token = tokenizer.next();
@@ -19,66 +25,72 @@ pub fn parse(allocator: Allocator, source: [:0]const u8) !Ast {
         }
     }
 
-    const ast_nodes = try allocator.alloc(Ast.Node, parser.nodes.items.len);
-    for (parser.nodes.items) |*node, i| {
-        const children = try allocator.alloc(
-            *Ast.Node,
-            node.children.items.len,
-        );
-        for (node.children.items) |child, j| {
-            children[j] = &ast_nodes[child];
+    const directives = try allocator.alloc(Directive, parser.directives.items.len);
+    const blocks = try allocator.alloc(Block, parser.blocks.items.len);
+
+    // convert blocks from arrays of indeces to arrays of pointers
+    for (parser.blocks.items) |*block, i| {
+        blocks[i] = try allocator.alloc(*Directive, block.items.len);
+        for (block.items) |directive_idx, j| {
+            blocks[i][j] = &directives[directive_idx];
         }
-        ast_nodes[i] = .{
-            .name = node.name,
-            .params = node.params.toOwnedSlice(allocator),
-            .children = children,
+    }
+
+    // copy directives and replace parser blocks with pointer-based blocks
+    for (parser.directives.items) |*directive, i| {
+        directives[i] = .{
+            .name = directive.name,
+            .params = directive.params.toOwnedSlice(allocator),
+            .blocks = try allocator.alloc(Block, directive.blocks.items.len),
         };
+        for (directive.blocks.items) |block_idx, j| {
+            directives[i].blocks[j] = blocks[block_idx];
+        }
     }
 
-    const roots = try allocator.alloc(*Ast.Node, parser.roots.items.len);
-    for (parser.roots.items) |root, i| {
-        roots[i] = &ast_nodes[root];
-    }
-
-    return Ast{
-        .source = source,
-        .nodes = ast_nodes,
-        .root = .{
-            .name = "root",
-            .params = &.{},
-            .children = roots,
-        },
-    };
+    _ = allocator.resize(blocks, 1);
+    return blocks[0];
 }
 
-test {
+test "parse: minimal" {
+    const source = "model A2 thin";
+
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+
+    const root = try parse(arena.allocator(), source);
+    try testing.expectEqual(@as(usize, 1), root.len);
+    try testing.expectEqualStrings("model", root[0].name);
+    try testing.expectEqual(@as(usize, 2), root[0].params.len);
+    try testing.expectEqualStrings("A2", root[0].params[0]);
+    try testing.expectEqualStrings("thin", root[0].params[1]);
+}
+
+test "parse: directives with a block" {
     const source =
         \\model A2 {
         \\  speed 250
-        \\  shape {
-        \\    length 50
-        \\    width 100
-        \\  }
         \\}
-        \\model C5 {
-        \\  speed 350
-        \\  shape {
-        \\    length 10
-        \\    width 260
-        \\  }
+        \\model A3 {
+        \\  speed 270
         \\}
     ;
 
-    var ast = try parse(testing.allocator, source);
-    defer ast.deinit(testing.allocator);
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
 
-    const models = try ast.getAll(testing.allocator, "model");
-    defer testing.allocator.free(models);
-    try testing.expectEqual(@as(usize, 2), models.len);
+    const root = try parse(arena.allocator(), source);
+    try testing.expectEqual(@as(usize, 2), root.len);
 
-    const model_c5 = ast.find("model", &.{"C5"}).?;
-    try testing.expectEqual(&ast.nodes[5], model_c5);
+    try testing.expectEqualStrings("model", root[0].name);
+    try testing.expectEqual(@as(usize, 1), root[0].params.len);
+    try testing.expectEqualStrings("A2", root[0].params[0]);
+    try testing.expectEqualStrings("speed", root[0].blocks[0][0].name);
+    try testing.expectEqualStrings("250", root[0].blocks[0][0].params[0]);
 
-    const model_c5_speed = model_c5.get("speed").?.params[0];
-    try testing.expectEqualStrings("350", model_c5_speed);
+    try testing.expectEqualStrings("model", root[1].name);
+    try testing.expectEqual(@as(usize, 1), root[1].params.len);
+    try testing.expectEqualStrings("A3", root[1].params[0]);
+    try testing.expectEqualStrings("speed", root[1].blocks[0][0].name);
+    try testing.expectEqualStrings("270", root[1].blocks[0][0].params[0]);
 }

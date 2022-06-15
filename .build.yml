@@ -1,0 +1,12 @@
+image: archlinux
+packages:
+  - zig
+sources:
+  - https://git.sr.ht/~andreafeletto/zig-scfg
+tasks:
+  - fmt: |
+      cd zig-scfg
+      zig fmt --check .
+  - test: |
+      cd zig-scfg
+      zig test scfg.zig

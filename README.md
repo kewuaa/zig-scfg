@@ -1,17 +1,19 @@
 
 # [zig-scfg]
 
-A [zig] library for [scfg].
+[![builds.sr.ht status](https://builds.sr.ht/~andreafeletto/zig-scfg/commits/main.svg)](https://builds.sr.ht/~andreafeletto/zig-scfg/commits/main)
 
-## Usage
+A [zig] library for parsing [scfg] configuration files.
 
-First clone this repository as a submodule.
+## Setup
+
+Clone this repository as a submodule.
 
 ```sh
 git submodule add https://git.sr.ht/~andreafeletto/zig-scfg deps/zig-scfg
 ```
 
-Than add the following to `build.zig`.
+Than add the following to your `build.zig`.
 
 ```zig
 pub fn build(b: *std.build.Builder) void {
@@ -31,77 +33,55 @@ The library can now be imported into your zig project.
 const scfg = @import("scfg");
 ```
 
-## Documentation
+## Usage
 
-The function `parse` takes an allocator and a null-terminated string and
-generates a tree.
-The tree is owned by the caller, who is responsible for calling `deinit`.
-The tree contains references to the source string, so the latter should not be
-deallocated before the tree.
+I suggested to use an arena allocator. The resulting tree structure can be quite
+complex, so manual deallocation could be tricky.
 
 ```zig
-const source =
-    \\model A2 {
-    \\  speed 250
-    \\  shape {
-    \\    length 50
-    \\    width 100
-    \\  }
-    \\}
-    \\model C5 {
-    \\  speed 350
-    \\  shape {
-    \\    length 10
-    \\    width 260
-    \\  }
-    \\}
-;
+const std = @import("std");
+const scfg = @import("scfg");
 
-var tree = try scfg.parse(allocator, source);
-defer tree.deinit(allocator);
+pub fn main() !void {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const file = try std.fs.cwd().openFile("example.scfg", .{});
+    // `source` must be a null-terminated string
+    const source = try file.readToEndAllocOptions(
+        allocator, 1_000_000, null, @alignOf(u8), 0
+    );
+
+    const root = try scfg.parse(allocator, source);
+    std.log.info("identifier of the first directive: {s}", .{root[0].name});
+}
 ```
 
-The function `getAll` returns a slice (owned by the caller) of the top-level
-directives filtered by their name.
+The result of the `parse` function is a slice of pointers to directives.
+Each directive has the following recursive structure:
 
 ```zig
-const models = try ast.getAll(allocator, "model");
-defer allocator.free(models);
-```
-
-The function `find` returns the first top-level directive with matching name
-and parameters.
-The parameters are compared in order and the lengths must be equal.
-If no match is found, `null` is returned.
-
-```zig
-const model_c5 = ast.find("model", &.{"C5"}) orelse {
-    std.log.err("not found", .{});
-    return;
+const Directive = struct {
+    name: []const u8,
+    params: [][]const u8,
+    blocks: [][]*Directive,
 };
 ```
 
-Every function can also be called on a directive.
-The function `get` returns the first top-level directive with matching name.
-If no match is found, `null` is returned.
-
-```zig
-const model_c5_speed = model_c5.get("speed") orelse {
-    std.log.err("not found", .{});
-    return;
-};
-```
-
-The parameters of a directive can be accessed through the `params` field.
-
-```zig
-const speed_value = model_c5_speed.params[0];
-```
-
-## License
+## Contributing
 
 The code in this repository is released under the MIT license.
+You are welcome to send patches to the [mailing list] or report bugs on the
+[issue tracker].
+
+If you aren't familiar with `git send-email`, you can use the [web interface]
+or learn about it following this excellent [tutorial].
 
 [zig-scfg]: https://sr.ht/~andreafeletto/zig-scfg/
 [zig]: https://ziglang.org/
 [scfg]: https://git.sr.ht/~emersion/scfg/
+[mailing list]: https://lists.sr.ht/~andreafeletto/public-inbox
+[issue tracker]: https://todo.sr.ht/~andreafeletto/zig-scfg
+[web interface]: https://git.sr.ht/~andreafeletto/zig-scfg/send-email
+[tutorial]: https://git-send-email.io
