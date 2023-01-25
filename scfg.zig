@@ -13,13 +13,13 @@ const Directive = struct {
     blocks: []Block,
 };
 
-pub fn parse(allocator: Allocator, source: [:0]const u8) !Block {
+pub fn parse(allocator: Allocator, source: []const u8) !Block {
     var tokenizer = try Tokenizer.init(source);
     var parser: Parser = .{ .allocator = allocator, .source = source };
 
     while (true) {
         const token = tokenizer.next();
-        try parser.feed(&token);
+        try parser.feed(token);
         if (token.tag == .eof) {
             break;
         }

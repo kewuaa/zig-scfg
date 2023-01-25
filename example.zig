@@ -6,9 +6,11 @@ pub fn main() !void {
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    const file = try std.fs.cwd().openFile("example.scfg", .{});
-    // `source` must be a null-terminated string
-    const source = try file.readToEndAllocOptions(allocator, 1_000_000, null, @alignOf(u8), 0);
+    const source = try std.fs.cwd().readFileAlloc(
+        allocator,
+        "example.scfg",
+        1_000_000,
+    );
 
     const root = try scfg.parse(allocator, source);
     std.log.info("identifier of the first directive: {s}", .{root[0].name});

@@ -18,7 +18,7 @@ const Directive = struct {
 const Block = ArrayListUnmanaged(usize);
 
 allocator: mem.Allocator,
-source: [:0]const u8,
+source: []const u8,
 
 state: enum { new, update } = .new,
 directive_idx: usize = 0,
@@ -27,7 +27,7 @@ directives: ArrayListUnmanaged(Directive) = .{},
 blocks: ArrayListUnmanaged(Block) = .{},
 path: ArrayListUnmanaged(usize) = .{},
 
-pub fn feed(self: *Parser, token: *const Token) !void {
+pub fn feed(self: *Parser, token: Token) !void {
     switch (self.state) {
         .new => switch (token.tag) {
             .newline => {},
@@ -115,7 +115,7 @@ test "parser: minimal" {
 
     while (true) {
         const token = tokenizer.next();
-        try parser.feed(&token);
+        try parser.feed(token);
         if (token.tag == .eof) break;
     }
 
@@ -145,7 +145,7 @@ test "parser: directive with a block" {
 
     while (true) {
         const token = tokenizer.next();
-        try parser.feed(&token);
+        try parser.feed(token);
         if (token.tag == .eof) break;
     }
 
