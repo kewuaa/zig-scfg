@@ -110,7 +110,7 @@ test "parser: minimal" {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
 
-    var tokenizer = Tokenizer.init(source);
+    var tokenizer = try Tokenizer.init(source);
     var parser: Parser = .{ .allocator = arena.allocator(), .source = source };
 
     while (true) {
@@ -140,7 +140,7 @@ test "parser: directive with a block" {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
 
-    var tokenizer = Tokenizer.init(source);
+    var tokenizer = try Tokenizer.init(source);
     var parser: Parser = .{ .allocator = arena.allocator(), .source = source };
 
     while (true) {

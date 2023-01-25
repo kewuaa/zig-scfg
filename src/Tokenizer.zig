@@ -1,5 +1,6 @@
 const std = @import("std");
 const testing = std.testing;
+const unicode = std.unicode;
 
 const Tokenizer = @This();
 
@@ -32,116 +33,117 @@ const State = enum {
     newline,
 };
 
-source: [:0]const u8,
+utf8: unicode.Utf8Iterator,
 index: usize,
+codepoint: u21,
 
-pub fn init(source: [:0]const u8) Tokenizer {
-    return Tokenizer{ .source = source, .index = 0 };
+pub fn init(source: []const u8) !Tokenizer {
+    const utf8_view = try unicode.Utf8View.init(source);
+    var utf8_iter = utf8_view.iterator();
+    const first = utf8_iter.nextCodepoint() orelse 0;
+
+    return Tokenizer{ .utf8 = utf8_iter, .index = 0, .codepoint = first };
 }
 
 pub fn next(self: *Tokenizer) Token {
     var state: State = .start;
-    var token: Token = .{
-        .tag = .eof,
-        .loc = .{ .start = self.index, .end = undefined },
-    };
+    var tag: ?Token.Tag = null;
+    var start = self.index;
 
-    while (true) : (self.index += 1) {
-        const char = self.source[self.index];
-
+    while (true) {
         switch (state) {
-            .start => switch (char) {
+            .start => switch (self.codepoint) {
                 0 => {
+                    tag = .eof;
                     break;
                 },
                 ' ', '\t', '\r' => {
-                    token.loc.start = self.index + 1;
+                    start = self.utf8.i;
                 },
                 '\n' => {
                     state = .newline;
-                    token.tag = .newline;
+                    tag = .newline;
                 },
                 '\'' => {
                     state = .squote_string;
-                    token.tag = .squote_string;
+                    tag = .squote_string;
                 },
                 '"' => {
                     state = .dquote_string;
-                    token.tag = .dquote_string;
-                },
-                'a'...'z', 'A'...'Z', '0'...'9', '_' => {
-                    state = .bare_string;
-                    token.tag = .bare_string;
+                    tag = .dquote_string;
                 },
                 '{' => {
-                    self.index += 1;
-                    token.tag = .l_brace;
-                    token.loc.end = self.index;
-                    return token;
+                    tag = .l_brace;
+                    break;
                 },
                 '}' => {
-                    self.index += 1;
-                    token.tag = .r_brace;
-                    token.loc.end = self.index;
-                    return token;
+                    tag = .r_brace;
+                    break;
                 },
                 else => {
-                    token.tag = .invalid;
-                    token.loc.end = self.index;
-                    self.index += 1;
-                    return token;
+                    state = .bare_string;
+                    tag = .bare_string;
                 },
             },
-            .bare_string => switch (char) {
+            .bare_string => switch (self.codepoint) {
                 0, ' ', '\t', '\r', '\n', '{', '}' => {
-                    break;
+                    return .{
+                        .tag = tag.?,
+                        .loc = .{ .start = start, .end = self.index },
+                    };
                 },
                 '"', '\'' => {
-                    token.tag = .invalid;
-                    token.loc.end = self.index;
-                    self.index += 1;
-                    return token;
+                    tag = .invalid;
+                    break;
                 },
                 else => {},
             },
-            .squote_string => switch (char) {
+            .squote_string => switch (self.codepoint) {
                 '\'' => {
-                    self.index += 1;
                     break;
                 },
                 0, '\n' => {
-                    token.tag = .invalid;
-                    token.loc.end = self.index;
-                    return token;
+                    tag = .invalid;
+                    break;
                 },
                 else => {},
             },
-            .dquote_string => switch (char) {
+            .dquote_string => switch (self.codepoint) {
                 '"' => {
-                    self.index += 1;
                     break;
                 },
                 0, '\n' => {
-                    token.tag = .invalid;
-                    token.loc.end = self.index;
-                    return token;
+                    tag = .invalid;
+                    break;
                 },
                 '\\' => {
-                    self.index += 1;
+                    self.index = self.utf8.i;
+                    self.codepoint = self.utf8.nextCodepoint() orelse 0;
                 },
                 else => {},
             },
-            .newline => switch (char) {
-                '\n' => {},
+            .newline => switch (self.codepoint) {
+                '\n', ' ', '\t', '\r' => {},
                 else => {
-                    break;
+                    return .{
+                        .tag = tag.?,
+                        .loc = .{ .start = start, .end = self.index },
+                    };
                 },
             },
         }
+
+        self.index = self.utf8.i;
+        self.codepoint = self.utf8.nextCodepoint() orelse 0;
     }
 
-    token.loc.end = self.index;
-    return token;
+    self.index = self.utf8.i;
+    self.codepoint = self.utf8.nextCodepoint() orelse 0;
+
+    return .{
+        .tag = tag.?,
+        .loc = .{ .start = start, .end = self.index },
+    };
 }
 
 test "tokenizer: minimal" {
@@ -152,14 +154,14 @@ test "tokenizer: minimal" {
         .{ .tag = .eof, .loc = .{ .start = 8, .end = 8 } },
     };
 
-    var tokenizer = Tokenizer.init(source);
+    var tokenizer = try Tokenizer.init(source);
     var tokens = std.ArrayList(Token).init(testing.allocator);
     defer tokens.deinit();
 
     while (true) {
         const token = tokenizer.next();
         try tokens.append(token);
-        if (token.tag == .eof) break;
+        if (token.tag == .eof or token.tag == .invalid) break;
     }
 
     try testing.expectEqualSlices(Token, &expected_tokens, tokens.items);
@@ -168,35 +170,39 @@ test "tokenizer: minimal" {
 test "tokenizer: full" {
     const source =
         \\model "E5" {
-        \\   max-speed 320km/h
+        \\  max-speed 320km/h
         \\
-        \\   weight '453.5t' "\""
+        \\  weight '453.5t' "\""
+        \\  emoji 🙋‍♂️
         \\}
     ;
     const expected_tokens = [_]Token{
         .{ .tag = .bare_string, .loc = .{ .start = 0, .end = 5 } },
         .{ .tag = .dquote_string, .loc = .{ .start = 6, .end = 10 } },
         .{ .tag = .l_brace, .loc = .{ .start = 11, .end = 12 } },
-        .{ .tag = .newline, .loc = .{ .start = 12, .end = 13 } },
-        .{ .tag = .bare_string, .loc = .{ .start = 16, .end = 25 } },
-        .{ .tag = .bare_string, .loc = .{ .start = 26, .end = 33 } },
-        .{ .tag = .newline, .loc = .{ .start = 33, .end = 35 } },
-        .{ .tag = .bare_string, .loc = .{ .start = 38, .end = 44 } },
-        .{ .tag = .squote_string, .loc = .{ .start = 45, .end = 53 } },
-        .{ .tag = .dquote_string, .loc = .{ .start = 54, .end = 58 } },
-        .{ .tag = .newline, .loc = .{ .start = 58, .end = 59 } },
-        .{ .tag = .r_brace, .loc = .{ .start = 59, .end = 60 } },
-        .{ .tag = .eof, .loc = .{ .start = 60, .end = 60 } },
+        .{ .tag = .newline, .loc = .{ .start = 12, .end = 15 } },
+        .{ .tag = .bare_string, .loc = .{ .start = 15, .end = 24 } },
+        .{ .tag = .bare_string, .loc = .{ .start = 25, .end = 32 } },
+        .{ .tag = .newline, .loc = .{ .start = 32, .end = 36 } },
+        .{ .tag = .bare_string, .loc = .{ .start = 36, .end = 42 } },
+        .{ .tag = .squote_string, .loc = .{ .start = 43, .end = 51 } },
+        .{ .tag = .dquote_string, .loc = .{ .start = 52, .end = 56 } },
+        .{ .tag = .newline, .loc = .{ .start = 56, .end = 59 } },
+        .{ .tag = .bare_string, .loc = .{ .start = 59, .end = 64 } },
+        .{ .tag = .bare_string, .loc = .{ .start = 65, .end = 78 } },
+        .{ .tag = .newline, .loc = .{ .start = 78, .end = 79 } },
+        .{ .tag = .r_brace, .loc = .{ .start = 79, .end = 80 } },
+        .{ .tag = .eof, .loc = .{ .start = 80, .end = 80 } },
     };
 
-    var tokenizer = Tokenizer.init(source);
+    var tokenizer = try Tokenizer.init(source);
     var tokens = std.ArrayList(Token).init(testing.allocator);
     defer tokens.deinit();
 
     while (true) {
         const token = tokenizer.next();
         try tokens.append(token);
-        if (token.tag == .eof) break;
+        if (token.tag == .eof or token.tag == .invalid) break;
     }
 
     try testing.expectEqualSlices(Token, &expected_tokens, tokens.items);

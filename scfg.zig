@@ -14,7 +14,7 @@ const Directive = struct {
 };
 
 pub fn parse(allocator: Allocator, source: [:0]const u8) !Block {
-    var tokenizer = Tokenizer.init(source);
+    var tokenizer = try Tokenizer.init(source);
     var parser: Parser = .{ .allocator = allocator, .source = source };
 
     while (true) {
