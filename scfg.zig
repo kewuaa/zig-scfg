@@ -71,7 +71,10 @@ test "parse: directives with a block" {
         \\model A2 {
         \\  speed 250
         \\}
+        \\
+        \\# top level comment
         \\model A3 {
+        \\  # indented comment
         \\  speed 270
         \\}
     ;

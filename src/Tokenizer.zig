@@ -31,6 +31,7 @@ const State = enum {
     squote_string,
     dquote_string,
     newline,
+    comment,
 };
 
 utf8: unicode.Utf8Iterator,
@@ -39,10 +40,12 @@ codepoint: u21,
 
 pub fn init(source: []const u8) !Tokenizer {
     const utf8_view = try unicode.Utf8View.init(source);
-    var utf8_iter = utf8_view.iterator();
-    const first = utf8_iter.nextCodepoint() orelse 0;
 
-    return Tokenizer{ .utf8 = utf8_iter, .index = 0, .codepoint = first };
+    return Tokenizer{
+        .utf8 = utf8_view.iterator(),
+        .index = 0,
+        .codepoint = '\n',
+    };
 }
 
 pub fn next(self: *Tokenizer) Token {
@@ -124,12 +127,21 @@ pub fn next(self: *Tokenizer) Token {
             },
             .newline => switch (self.codepoint) {
                 '\n', ' ', '\t', '\r' => {},
+                '#' => {
+                    state = .comment;
+                },
                 else => {
                     return .{
                         .tag = tag.?,
                         .loc = .{ .start = start, .end = self.index },
                     };
                 },
+            },
+            .comment => switch (self.codepoint) {
+                '\n' => {
+                    state = .newline;
+                },
+                else => {},
             },
         }
 
@@ -147,11 +159,17 @@ pub fn next(self: *Tokenizer) Token {
 }
 
 test "tokenizer: minimal" {
-    const source = "model A2";
+    const source =
+        \\
+        \\model A2
+        \\
+    ;
     const expected_tokens = [_]Token{
-        .{ .tag = .bare_string, .loc = .{ .start = 0, .end = 5 } },
-        .{ .tag = .bare_string, .loc = .{ .start = 6, .end = 8 } },
-        .{ .tag = .eof, .loc = .{ .start = 8, .end = 8 } },
+        .{ .tag = .newline, .loc = .{ .start = 0, .end = 1 } },
+        .{ .tag = .bare_string, .loc = .{ .start = 1, .end = 6 } },
+        .{ .tag = .bare_string, .loc = .{ .start = 7, .end = 9 } },
+        .{ .tag = .newline, .loc = .{ .start = 9, .end = 10 } },
+        .{ .tag = .eof, .loc = .{ .start = 10, .end = 10 } },
     };
 
     var tokenizer = try Tokenizer.init(source);
@@ -169,30 +187,33 @@ test "tokenizer: minimal" {
 
 test "tokenizer: full" {
     const source =
+        \\# comment
         \\model "E5" {
         \\  max-speed 320km/h
         \\
         \\  weight '453.5t' "\""
+        \\  # indented comment
         \\  emoji 🙋‍♂️
         \\}
     ;
     const expected_tokens = [_]Token{
-        .{ .tag = .bare_string, .loc = .{ .start = 0, .end = 5 } },
-        .{ .tag = .dquote_string, .loc = .{ .start = 6, .end = 10 } },
-        .{ .tag = .l_brace, .loc = .{ .start = 11, .end = 12 } },
-        .{ .tag = .newline, .loc = .{ .start = 12, .end = 15 } },
-        .{ .tag = .bare_string, .loc = .{ .start = 15, .end = 24 } },
-        .{ .tag = .bare_string, .loc = .{ .start = 25, .end = 32 } },
-        .{ .tag = .newline, .loc = .{ .start = 32, .end = 36 } },
-        .{ .tag = .bare_string, .loc = .{ .start = 36, .end = 42 } },
-        .{ .tag = .squote_string, .loc = .{ .start = 43, .end = 51 } },
-        .{ .tag = .dquote_string, .loc = .{ .start = 52, .end = 56 } },
-        .{ .tag = .newline, .loc = .{ .start = 56, .end = 59 } },
-        .{ .tag = .bare_string, .loc = .{ .start = 59, .end = 64 } },
-        .{ .tag = .bare_string, .loc = .{ .start = 65, .end = 78 } },
-        .{ .tag = .newline, .loc = .{ .start = 78, .end = 79 } },
-        .{ .tag = .r_brace, .loc = .{ .start = 79, .end = 80 } },
-        .{ .tag = .eof, .loc = .{ .start = 80, .end = 80 } },
+        .{ .tag = .newline, .loc = .{ .start = 0, .end = 10 } },
+        .{ .tag = .bare_string, .loc = .{ .start = 10, .end = 15 } },
+        .{ .tag = .dquote_string, .loc = .{ .start = 16, .end = 20 } },
+        .{ .tag = .l_brace, .loc = .{ .start = 21, .end = 22 } },
+        .{ .tag = .newline, .loc = .{ .start = 22, .end = 25 } },
+        .{ .tag = .bare_string, .loc = .{ .start = 25, .end = 34 } },
+        .{ .tag = .bare_string, .loc = .{ .start = 35, .end = 42 } },
+        .{ .tag = .newline, .loc = .{ .start = 42, .end = 46 } },
+        .{ .tag = .bare_string, .loc = .{ .start = 46, .end = 52 } },
+        .{ .tag = .squote_string, .loc = .{ .start = 53, .end = 61 } },
+        .{ .tag = .dquote_string, .loc = .{ .start = 62, .end = 66 } },
+        .{ .tag = .newline, .loc = .{ .start = 66, .end = 90 } },
+        .{ .tag = .bare_string, .loc = .{ .start = 90, .end = 95 } },
+        .{ .tag = .bare_string, .loc = .{ .start = 96, .end = 109 } },
+        .{ .tag = .newline, .loc = .{ .start = 109, .end = 110 } },
+        .{ .tag = .r_brace, .loc = .{ .start = 110, .end = 111 } },
+        .{ .tag = .eof, .loc = .{ .start = 111, .end = 111 } },
     };
 
     var tokenizer = try Tokenizer.init(source);

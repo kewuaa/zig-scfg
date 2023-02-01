@@ -132,7 +132,9 @@ test "parser: minimal" {
 
 test "parser: directive with a block" {
     const source =
+        \\# comment
         \\model A2 {
+        \\  # comment
         \\  speed 250 kmph
         \\}
     ;
