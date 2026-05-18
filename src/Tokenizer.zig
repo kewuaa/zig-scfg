@@ -173,12 +173,12 @@ test "tokenizer: minimal" {
     };
 
     var tokenizer = try Tokenizer.init(source);
-    var tokens = std.ArrayList(Token).init(testing.allocator);
-    defer tokens.deinit();
+    var tokens = std.ArrayList(Token).empty;
+    defer tokens.deinit(std.testing.allocator);
 
     while (true) {
         const token = tokenizer.next();
-        try tokens.append(token);
+        try tokens.append(std.testing.allocator, token);
         if (token.tag == .eof or token.tag == .invalid) break;
     }
 
@@ -217,12 +217,12 @@ test "tokenizer: full" {
     };
 
     var tokenizer = try Tokenizer.init(source);
-    var tokens = std.ArrayList(Token).init(testing.allocator);
-    defer tokens.deinit();
+    var tokens = std.ArrayList(Token).empty;
+    defer tokens.deinit(std.testing.allocator);
 
     while (true) {
         const token = tokenizer.next();
-        try tokens.append(token);
+        try tokens.append(std.testing.allocator, token);
         if (token.tag == .eof or token.tag == .invalid) break;
     }
 

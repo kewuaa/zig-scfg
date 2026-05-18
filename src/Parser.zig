@@ -23,9 +23,9 @@ source: []const u8,
 state: enum { new, update } = .new,
 directive_idx: usize = 0,
 
-directives: ArrayListUnmanaged(Directive) = .{},
-blocks: ArrayListUnmanaged(Block) = .{},
-path: ArrayListUnmanaged(usize) = .{},
+directives: ArrayListUnmanaged(Directive) = .empty,
+blocks: ArrayListUnmanaged(Block) = .empty,
+path: ArrayListUnmanaged(usize) = .empty,
 
 pub fn feed(self: *Parser, token: Token) !void {
     switch (self.state) {
@@ -34,14 +34,14 @@ pub fn feed(self: *Parser, token: Token) !void {
             .bare_string => {
                 try self.directives.append(self.allocator, .{
                     .name = self.source[token.loc.start..token.loc.end],
-                    .params = .{},
-                    .blocks = .{},
+                    .params = .empty,
+                    .blocks = .empty,
                 });
                 self.directive_idx = self.directives.items.len - 1;
 
                 // create top-level block on first directive
                 if (self.blocks.items.len == 0) {
-                    try self.blocks.append(self.allocator, .{});
+                    try self.blocks.append(self.allocator, .empty);
                     try self.path.append(self.allocator, 0);
                 }
 
@@ -83,7 +83,7 @@ pub fn feed(self: *Parser, token: Token) !void {
                 try directive.params.append(self.allocator, param);
             },
             .l_brace => {
-                try self.blocks.append(self.allocator, .{});
+                try self.blocks.append(self.allocator, .empty);
                 const block_idx = self.blocks.items.len - 1;
 
                 const directive = &self.directives.items[self.directive_idx];

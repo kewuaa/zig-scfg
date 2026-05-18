@@ -2,8 +2,8 @@ const std = @import("std");
 const testing = std.testing;
 const Allocator = std.mem.Allocator;
 
-const Parser = @import("src/Parser.zig");
-const Tokenizer = @import("src/Tokenizer.zig");
+const Parser = @import("Parser.zig");
+const Tokenizer = @import("Tokenizer.zig");
 
 const Block = []*Directive;
 
@@ -29,21 +29,21 @@ pub fn parse(allocator: Allocator, source: []const u8) !Block {
     const blocks = try allocator.alloc(Block, parser.blocks.items.len);
 
     // convert blocks from arrays of indeces to arrays of pointers
-    for (parser.blocks.items) |*block, i| {
+    for (0.., parser.blocks.items) |i, *block| {
         blocks[i] = try allocator.alloc(*Directive, block.items.len);
-        for (block.items) |directive_idx, j| {
+        for (0.., block.items) |j, directive_idx| {
             blocks[i][j] = &directives[directive_idx];
         }
     }
 
     // copy directives and replace parser blocks with pointer-based blocks
-    for (parser.directives.items) |*directive, i| {
+    for (0.., parser.directives.items) |i, *directive| {
         directives[i] = .{
             .name = directive.name,
-            .params = directive.params.toOwnedSlice(allocator),
+            .params = try directive.params.toOwnedSlice(allocator),
             .blocks = try allocator.alloc(Block, directive.blocks.items.len),
         };
-        for (directive.blocks.items) |block_idx, j| {
+        for (0.., directive.blocks.items) |j, block_idx| {
             directives[i].blocks[j] = blocks[block_idx];
         }
     }

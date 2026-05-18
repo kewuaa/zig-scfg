@@ -1,17 +1,22 @@
 const std = @import("std");
-const scfg = @import("scfg.zig");
+const Io = std.Io;
+const process = std.process;
 
-pub fn main() !void {
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
+const scfg = @import("scfg");
 
-    const source = try std.fs.cwd().readFileAlloc(
-        allocator,
+pub fn main(init: process.Init) !void {
+    const allocator = init.arena.allocator();
+
+    const source = try Io.Dir.cwd().readFileAlloc(
+        init.io,
         "example.scfg",
-        1_000_000,
+        allocator,
+        .limited(1_000_000),
     );
 
     const root = try scfg.parse(allocator, source);
-    std.log.info("identifier of the first directive: {s}", .{root[0].name});
+    for (root) |directive| {
+        std.log.info("name: {s}", .{ directive.name });
+        std.log.info("params: {s}", .{ try std.mem.join(allocator, ", ", directive.params) });
+    }
 }
